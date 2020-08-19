@@ -1,6 +1,6 @@
 //! Image processing functions.
 
-use image::{GenericImageView, GenericImage, GrayImage, ImageBuffer, Rgba};
+use image::{GenericImageView, GenericImage, ImageBuffer, Rgba, RgbaImage};
 use log::info;
 
 use crate::decode::{PX_PER_CHANNEL, PX_SYNC_FRAME, PX_SPACE_DATA, PX_CHANNEL_IMAGE_DATA};
@@ -90,22 +90,44 @@ pub fn south_to_north_pass(orbit_settings: &OrbitSettings) -> err::Result<bool> 
 /// Histogram equalization, for each channel separately.
 /// Works only on the grayscale image,
 /// needs to be done before the RGBA conversion.
-pub fn histogram_equalization(img: &GrayImage) -> err::Result<GrayImage> {
+pub fn histogram_equalization(img: &RgbaImage) -> err::Result<RgbaImage> {
     info!("Performing histogram equalization");
 
-    let mut output = GrayImage::new(img.width(), img.height());
-    let mut channel_a = img.view(0, 0, PX_PER_CHANNEL, img.height()).to_image();
+    let mut channel_a = img
+        .view(0, 0, PX_PER_CHANNEL, img.height()).to_image();
     let mut channel_b = img
         .view(PX_PER_CHANNEL, 0, PX_PER_CHANNEL, img.height())
-        .to_image();
-
-    imageproc::contrast::equalize_histogram_mut(&mut channel_a);
-    imageproc::contrast::equalize_histogram_mut(&mut channel_b);
-
+        .to_image();    
+    
+    equalize_rgba_image_channels(&mut channel_a);
+    equalize_rgba_image_channels(&mut channel_b);
+    
+    let mut output = RgbaImage::new(img.width(), img.height());
     output.copy_from(&channel_a, 0, 0)?;
     output.copy_from(&channel_b, PX_PER_CHANNEL, 0)?;
 
     Ok(output)
+}
+
+/// Equalizes the histogram for each channel of the image separately
+fn equalize_rgba_image_channels(image: &mut RgbaImage) {
+    // cumulative histogram for each channel
+    let histograms: Vec<[u32; 256]> = imageproc::stats::cumulative_histogram(image).channels;
+    let total = histograms[0][255] as f32;
+
+    image.pixels_mut().for_each(|p| {
+        let r_fraction = histograms[0][p[0] as usize] as f32 / total;
+        let g_fraction = histograms[1][p[1] as usize] as f32 / total;
+        let b_fraction = histograms[2][p[2] as usize] as f32 / total;
+        let a_value = p[3];
+        
+        *p = image::Rgba([
+            (r_fraction * 255.).min(255.) as u8,
+            (g_fraction * 255.).min(255.) as u8,
+            (b_fraction * 255.).min(255.) as u8,
+            a_value,
+        ]);
+    })
 }
 
 /// Attempts to produce a colored image from grayscale channel and IR data.

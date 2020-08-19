@@ -150,20 +150,21 @@ pub fn process(
 
     use image::GrayImage;
 
-    let mut img: GrayImage = GrayImage::from_vec(PX_PER_ROW, height, map(&signal, low, high))
+    let img: GrayImage = GrayImage::from_vec(PX_PER_ROW, height, map(&signal, low, high))
         .ok_or_else(|| {
             err::Error::Internal("Could not create image, wrong buffer length".to_string())
         })?;
-
-    if let Contrast::Histogram = contrast_adjustment {
-        img = processing::histogram_equalization(&img)?;
-    }
 
     let mut img: Image = image::DynamicImage::ImageLuma8(img).into_rgba(); // convert to RGBA
 
     if false_color {
         processing::false_color(&mut img, settings.default_false_color_values);
     }
+
+    if let Contrast::Histogram = contrast_adjustment {
+        img = processing::histogram_equalization(&img)?;
+    }
+
     // --------------------
 
     if let Some(orbit_settings) = orbit.clone() {
